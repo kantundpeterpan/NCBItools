@@ -61,6 +61,8 @@ class NCBITool(object):
         print('No. of results: ', len(self.ids))
         if len(self.ids)==retmax:
             print('###! There might be more results available !###')
+
+	return self
             
     def parse(self, n_jobs=12, ids=None, keep_xml=False):
         
@@ -127,6 +129,8 @@ class NCBITool(object):
         ).reset_index()
         
         self.data.pub_date = pd.to_datetime(self.data.pub_date)
+	
+	return self
     
     @classmethod
     def parse_pmc_ids(self, pmcid, retmode = 'xml'):
