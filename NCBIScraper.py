@@ -46,8 +46,11 @@ class NCBITool(object):
             'pubmed':NCBITool.parse_pubmed_ids,
             'pmc':NCBITool.parse_pmc_ids
         }
-    
-        self.parser = parsers[self.db]
+
+        if self.db in parsers.keys():
+            self.parser = parsers[self.db]
+        else:
+            self.parser = lambda x:x
         
     def search(self,
                search_term,
@@ -62,7 +65,7 @@ class NCBITool(object):
         if len(self.ids)==retmax:
             print('###! There might be more results available !###')
 
-	return self
+        return self
             
     def parse(self, n_jobs=12, ids=None, keep_xml=False):
         
@@ -129,8 +132,8 @@ class NCBITool(object):
         ).reset_index()
         
         self.data.pub_date = pd.to_datetime(self.data.pub_date)
-	
-	return self
+
+        return self
     
     @classmethod
     def parse_pmc_ids(self, pmcid, retmode = 'xml'):
