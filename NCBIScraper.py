@@ -44,7 +44,8 @@ class NCBITool(object):
         
         parsers = {
             'pubmed':NCBITool.parse_pubmed_ids,
-            'pmc':NCBITool.parse_pmc_ids
+            'pmc':NCBITool.parse_pmc_ids,
+            'nucleotide':NCBITool.parse_nucleotide_ids
         }
 
         if self.db in parsers.keys():
@@ -118,20 +119,30 @@ class NCBITool(object):
                 'journal',
                 'pmcclass',
                 'pmc_keywords'
-            ]
+            ],
+            'nucleotide':[
+                    'acc',
+                    'def',
+                    'gene',
+                    'allele',
+                    'prot_seq',
+                    'prot_id',
+                    'pmid'
+                ]
         }
 
         self.data = pd.concat(
             [
                 pd.DataFrame(
-                    x[0],
+                    x,
                     columns = column_names[self.db]
                 )
                 for x in data
             ]
-        ).reset_index()
+        )
         
-        self.data.pub_date = pd.to_datetime(self.data.pub_date)
+        if self.db in ['pubmed', 'pmc']:
+            self.data.pub_date = pd.to_datetime(self.data.pub_date)
 
         return self
     
@@ -140,8 +151,8 @@ class NCBITool(object):
         
         #get xml from pmc
         handle = efetch(db='pmc', id = pmcid, retmode = retmode)
-        xml_string = handle.read()
-        xml = ET.fromstring(xml_string)
+        #xml_string = handle.read()
+        xml = ET.parse(handle).getroot()
 
         #check for keywords and MeshTerms
         keys = []
@@ -202,7 +213,7 @@ class NCBITool(object):
                 )
             )
             
-        return keys, xml_string
+        return keys#, xml_string
         
     
     @classmethod
@@ -210,17 +221,20 @@ class NCBITool(object):
     
         #get xml from pubmed
         handle = efetch(db='pubmed', id = pub_id, retmode = retmode)
-        xml_string = handle.read()
-        xml = ET.fromstring(xml_string)
+        #xml_string = handle.read()
+        xml = ET.parse(handle).getroot()
 
         #check for keywords and MeshTerms
         keys = []
 
         for art in xml.getchildren():
             
-            #authors
-            auth = zip(art.findall('.//Author/ForeName'), art.findall('.//Author/LastName'))
-            auth = ';'.join([' '.join([i.text, j.text]) for (i,j) in auth])
+            try:
+                #authors
+                auth = zip(art.findall('.//Author/ForeName'), art.findall('.//Author/LastName'))
+                auth = ';'.join([' '.join([i.text, j.text]) for (i,j) in auth])
+            except:
+                auth = 'NA'
             
             #affiliations
             email_re = re.compile('Electronic address.*\.')
@@ -233,18 +247,21 @@ class NCBITool(object):
                         )
                     )   
             
-            #publication date
-            pub_date = '-'.join(
-                [
-                    x.text for x in [
-                        art.find('.//PubMedPubDate[@PubStatus="entrez"]/Year'),
-                        art.find('.//PubMedPubDate[@PubStatus="entrez"]/Month'),
-                        art.find('.//PubMedPubDate[@PubStatus="entrez"]/Day')
+            try:
+                #publication date
+                pub_date = '-'.join(
+                    [
+                        x.text for x in [
+                            art.find('.//PubMedPubDate[@PubStatus="entrez"]/Year'),
+                            art.find('.//PubMedPubDate[@PubStatus="entrez"]/Month'),
+                            art.find('.//PubMedPubDate[@PubStatus="entrez"]/Day')
+                        ]
                     ]
-                ]
-            )
+                )
+            except:
+                pub_date = 'NA'
             
-            if pub_date == '':
+            if pub_date == 'NA':
                 pub_date = '1900-01-01'
                 
             pubmed_id = ''.join(art.xpath('.//PubmedData/ArticleIdList/ArticleId[@IdType="pubmed"]/text()'))
@@ -275,5 +292,53 @@ class NCBITool(object):
 
         gc.collect()
 
-        return keys, xml_string
-
+        return keys#, xml_string
+    
+    @classmethod
+    def parse_nucleotide_ids(cls, _id, retmode = 'xml'):
+        
+        #get xml from pubmed
+        handle = efetch(db='nucleotide', id = _id, retmode = retmode)
+        #xml_string = handle.read()
+        xml = ET.parse(handle).getroot()
+        
+        rows = []
+        
+        for seq in xml.getchildren():
+            
+            #accession
+            acc = seq.xpath('GBSeq_primary-accession/text()')[0] or 'NA'
+            
+            #definition
+            _def = seq.xpath('GBSeq_definition/text()')[0] or 'NA'
+            #print(acc, _def)
+            
+            #gene
+            gene = seq.xpath('GBSeq_feature-table//GBQualifier_name[text()="gene"]/../GBQualifier_value/text()')[0] or 'NA'
+            
+            #allele
+            allele = seq.xpath('GBSeq_feature-table//GBQualifier_name[text()="allele"]/../GBQualifier_value/text()')
+            if allele:
+                allele = allele[0]
+            else:
+                allele = 'NA'
+            
+            #prot_seq
+            prot_seq = seq.xpath('GBSeq_feature-table//GBQualifier_name[text()="translation"]/../GBQualifier_value/text()')[0] or 'NA'
+            
+            #prot_id
+            prot_id = seq.xpath('GBSeq_feature-table//GBQualifier_name[text()="protein_id"]/../GBQualifier_value/text()')[0] or 'NA'
+            
+            pubmed_id = seq.xpath('GBSeq_references/*/GBReference_pubmed/text()')
+            
+            rows.append((
+                    acc,
+                    _def,
+                    gene,
+                    allele,
+                    prot_seq,
+                    prot_id,
+                    pubmed_id
+                ))
+            
+        return rows
